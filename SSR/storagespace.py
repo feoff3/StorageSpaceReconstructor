@@ -105,16 +105,19 @@ class StorageSpace:
             print("[*] SDBC Parsing Success.")
         else:
             print("[*] SDBC Parsing Fail.")
-            #return False
-            return True  # 임시
+            return False
 
-        sdbb = self.dp.read(0x10000)
+        sddb_size = self.next_sdbb_entry_number * self.sdbb_entry_size
+        if sddb_size % 0x200 > 0:
+            sddb_size = sddb_size + (0x200 - sddb_size % 0x200)
+        #NOTE: I have found another SDBB after 256MB from the first one,
+        # may it be extensible or something???
+        sdbb = self.dp.read(sddb_size)
         if self.__parse_sdbb(sdbb):
             print("[*] SDBB Parsing Success.")
         else:
             print("[*] SDBB Parsing Fail.")
-            #return False
-            return True  # 임시
+            return False
 
         print("[*] Disk Parsing Success.")
         return True
@@ -172,7 +175,7 @@ class StorageSpace:
     def __parse_sdbb(self, data):
         """
 
-        :param data: SDBB raw data(0x10000 bytes) temporary size
+        :param data: SDBB raw data
         :return: True / False
         """
 
@@ -182,16 +185,21 @@ class StorageSpace:
             temp_list.append(b'')
 
         """ Insert to list """
-        for i in range(0x08, self.next_sdbb_entry_number):
-            temp_offset = (i - 8) * 0x40
+        # no idea why it starts from 8, gotta be buggy...
+        for i in range(0x0, self.next_sdbb_entry_number): 
+            temp_offset = i * 0x40
             if data[temp_offset + 0x0E : temp_offset + 0x10] == b'\x00\x00':  # Empty Entry
                 continue
-
+            if len(data[temp_offset + 0x08 : temp_offset + 0x0C]) == 0:
+                #print("cannot find data in __parse_sdbb")
+                print(str(i))
+                print(str(temp_offset))
+                #continue
             temp_list_index = struct.unpack('>I', data[temp_offset + 0x08 : temp_offset + 0x0C])[0]
             temp_list[temp_list_index] += data[temp_offset + 0x10 : temp_offset + 0x40]
 
         """ Sort Entries """
-        for i in range(0x08, self.next_sdbb_entry_number):
+        for i in range(0x0, self.next_sdbb_entry_number):
             if temp_list[i] == b'':
                 continue
 
