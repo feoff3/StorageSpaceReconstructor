@@ -11,3 +11,5 @@ You can download the testset from the above URL. And if you move the testset to 
 
 ##### Other information
 * Usage: https://github.com/KimVegetable/StorageSpaceReconstructor/wiki/Usage
+
+* This repo is a fork of https://github.com/KimVegetable/StorageSpaceReconstructor (big respect to the original author!) that adds some expiremental features e.g. parsing of online disks like \\.\PhysicalDrive2, and adding some modes that retrieve the placement of data only without rebuilding an actual VD.
