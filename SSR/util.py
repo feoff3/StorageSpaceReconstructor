@@ -15,3 +15,7 @@ def little_endian_to_int(buf) :
 			multi *= 256
 		val += buf[i] * multi
 	return val
+
+def print_hex(buf):
+        array_alpha = buf
+        print (''.join('{:02x} '.format(x) for x in array_alpha))

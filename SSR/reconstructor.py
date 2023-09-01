@@ -53,10 +53,12 @@ class Reconstructor:
         return True
 
     def _parse_entry_type1(self):
+        """type1 entry contains data regarding physical disks to storage pool association"""
         for disk in self.disk_list:
             temp_offset = 0
 
             for i in range(0, len(disk.sdbb_entry_type1)):
+                # I fail to understand how it works...
                 temp_offset += disk.sdbb_entry_type1[i][temp_offset] + 1
                 temp_offset += disk.sdbb_entry_type1[i][temp_offset] + 1
                 storage_pool_uuid = disk.sdbb_entry_type1[i][temp_offset : temp_offset + 0x10]
@@ -70,6 +72,7 @@ class Reconstructor:
         return True
 
     def _parse_entry_type2(self):
+        """type2 contains info about physical disks"""
         temp_disk = None
         for disk in self.disk_list:
             if len(disk.sdbb_entry_type2) == 0:
@@ -79,29 +82,60 @@ class Reconstructor:
         for i in range(0, len(temp_disk.sdbb_entry_type2)):
             disk = Disk()
             temp_offset = 0
+            #print_hex(temp_disk.sdbb_entry_type2[i])
             data_record_len = temp_disk.sdbb_entry_type2[i][temp_offset]
             physical_disk_id = big_endian_to_int(temp_disk.sdbb_entry_type2[i][temp_offset + 1: temp_offset + 1 + data_record_len])
-
+            
             temp_offset += temp_disk.sdbb_entry_type2[i][temp_offset] + 1
             temp_offset += temp_disk.sdbb_entry_type2[i][temp_offset] + 1
-
             physical_disk_uuid = temp_disk.sdbb_entry_type2[i][temp_offset: temp_offset + 0x10]
             temp_offset += 0x10
-
-            physical_disk_name_length = struct.unpack('>H', temp_disk.sdbb_entry_type2[i][temp_offset: temp_offset + 0x02])[0]
-            temp_offset += 0x02
-
-            physical_disk_name = b''
-            temp_physical_disk_name = temp_disk.sdbb_entry_type2[i][temp_offset: temp_offset + physical_disk_name_length * 2]
-            temp_offset += physical_disk_name_length * 2
-            for j in range(0, physical_disk_name_length * 2, 2):
-                physical_disk_name += temp_physical_disk_name[j + 1 : j + 2]
-                physical_disk_name += temp_physical_disk_name[j : j + 1]
-            temp_offset += 6
-
-            data_record_len = temp_disk.sdbb_entry_type2[i][temp_offset]
-            physical_disk_block_number = big_endian_to_int(temp_disk.sdbb_entry_type2[i][temp_offset + 1 : temp_offset + 1 + data_record_len])
-
+            if self.version == Define.WINDOWS_SERVER_2019:
+                # NOTE: maybe structure changed in Win2019... 
+                # Some more data (mostly nulls) were added before the disk name, and some added after
+                temp_offset += 0x06
+                temp_offset += temp_disk.sdbb_entry_type2[i][temp_offset] + 1
+                #print(str(temp_offset))
+                mfg_name_length = temp_disk.sdbb_entry_type2[i][temp_offset]
+                physical_disk_name = b''
+                temp_mfg_name = temp_disk.sdbb_entry_type2[i][temp_offset: temp_offset + mfg_name_length * 2]
+                temp_offset += (mfg_name_length + 1) * 2 
+                #print(str(temp_offset))
+                model_name_length = temp_disk.sdbb_entry_type2[i][temp_offset]
+                temp_offset += 1
+                temp_model_name = temp_disk.sdbb_entry_type2[i][temp_offset: temp_offset + model_name_length * 2]
+                temp_offset += (model_name_length + 1) * 2
+                #print(str(temp_offset))
+                for j in range(0, model_name_length * 2, 2):
+                    physical_disk_name += temp_model_name[j + 1 : j + 2]
+                    physical_disk_name += temp_model_name[j : j + 1]
+                #print(str(physical_disk_name))
+                temp_offset += 6
+                #print_hex(temp_disk.sdbb_entry_type2[i][temp_offset:])
+                #print(str(temp_offset))
+                temp_offset += 30
+                #print_hex(temp_disk.sdbb_entry_type2[i][temp_offset:])
+                #print(str(temp_offset))
+                data_record_len = temp_disk.sdbb_entry_type2[i][temp_offset]
+                physical_disk_total_size = big_endian_to_int(temp_disk.sdbb_entry_type2[i][temp_offset + 1 : temp_offset + 1 + data_record_len])
+                temp_offset += temp_disk.sdbb_entry_type2[i][temp_offset] + 1
+                data_record_len = temp_disk.sdbb_entry_type2[i][temp_offset]
+                physical_disk_usable_size = big_endian_to_int(temp_disk.sdbb_entry_type2[i][temp_offset + 1 : temp_offset + 1 + data_record_len])
+                print("Total: " + str(physical_disk_total_size) + "B , Usable: " + str(physical_disk_usable_size) + "B")
+                physical_disk_block_number = physical_disk_usable_size / 0x10000000 #TODO: check if block number is expected to be this  
+                #TODO: If possible, check on Win2016 
+            else:
+                physical_disk_name_length = struct.unpack('>H', temp_disk.sdbb_entry_type2[i][temp_offset: temp_offset + 0x02])[0]
+                temp_offset += 0x02
+                physical_disk_name = b''
+                temp_physical_disk_name = temp_disk.sdbb_entry_type2[i][temp_offset: temp_offset + physical_disk_name_length * 2]
+                temp_offset += physical_disk_name_length * 2
+                for j in range(0, physical_disk_name_length * 2, 2):
+                    physical_disk_name += temp_physical_disk_name[j + 1 : j + 2]
+                    physical_disk_name += temp_physical_disk_name[j : j + 1]
+                temp_offset += 6
+                data_record_len = temp_disk.sdbb_entry_type2[i][temp_offset]
+                physical_disk_block_number = big_endian_to_int(temp_disk.sdbb_entry_type2[i][temp_offset + 1 : temp_offset + 1 + data_record_len])
             disk.id = physical_disk_id
             disk.uuid = physical_disk_uuid
             disk.name = physical_disk_name
@@ -146,6 +180,8 @@ class Reconstructor:
                 virtual_disk_name += temp_virtual_disk_name[j + 1 : j + 2]
                 virtual_disk_name += temp_virtual_disk_name[j : j + 1]
 
+            #if (len(temp_disk.sdbb_entry_type3[i][temp_offset: temp_offset + 0x02]) == 0):
+            #    continue
             disk_description_length = struct.unpack('>H', temp_disk.sdbb_entry_type3[i][temp_offset: temp_offset + 0x02])[0]
             temp_offset += 0x02
 
@@ -284,15 +320,17 @@ class Reconstructor:
                     temp_disk.sdbb_entry_type4[i][temp_offset + 1: temp_offset + 1 + data_record_len])
                 temp_offset += temp_disk.sdbb_entry_type4[i][temp_offset] + 1
 
-                self.parsed_disks[sdbb_entry_type4_data['virtual_disk_id']].sdbb_entry_type4.append(
-                    sdbb_entry_type4_data)
+                if self.parsed_disks[sdbb_entry_type4_data['virtual_disk_id']] != None:
+                    self.parsed_disks[sdbb_entry_type4_data['virtual_disk_id']].sdbb_entry_type4.append(
+                        sdbb_entry_type4_data)
 
     """ restore disks """
     def restore_virtual_disk(self, output_path=None):
-
         for disk in self.parsed_disks:
             if disk == None:  # None skip
                 continue
+
+            print(repr(disk.__dict__))
 
             if repr(disk.dp) == "Storage Space":  # physical disk skip
                 continue
@@ -669,6 +707,7 @@ class Reconstructor:
                                 disk.dp.write(buf)
 
                     elif self.level == Define.RAID_LEVEL_SIMPLE:
+                        """HERE <== """
                         for i in range(0, disk.block_number, 12):
                             is_exist_disk_block = False
 
