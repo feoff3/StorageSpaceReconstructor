@@ -19,3 +19,11 @@ def little_endian_to_int(buf) :
 def print_hex(buf):
         array_alpha = buf
         print (''.join('{:02x} '.format(x) for x in array_alpha))
+
+def skip_disk_bytes(f , size, direct_mode):
+        """ process empty block """
+        if direct_mode == False:
+            buf = b'\x00' * size
+            f.write(buf)
+        else:
+            f.seek(size, 1)

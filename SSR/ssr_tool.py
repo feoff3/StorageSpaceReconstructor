@@ -13,7 +13,7 @@ class StorageSpaceReconstructorTool():
 
     """
     NAME = 'Storage Space Reconstructor(SSR)'
-    VERSION = '1.0'
+    VERSION = '1.1'
     DESCRIPTION = textwrap.dedent('\n'.join([
         '',
         'Storage Space Reconstructor(SSR)',
@@ -39,7 +39,7 @@ class StorageSpaceReconstructorTool():
 
         """
         super(StorageSpaceReconstructorTool, self).__init__()
-
+        self.reconstruct_modes = dict()
         self.show_info = False
 
     def ParseArguments(self, arguments):
@@ -68,6 +68,10 @@ class StorageSpaceReconstructorTool():
 
         argument_parser.add_argument(
             '-level', '--raid_level', action='store', dest='raid_level', type=str, help='Enter a RAID level of the target.')
+
+        argument_parser.add_argument('-D', '--direct_output', action='store_true')
+
+        argument_parser.add_argument('-l', '--list_only', action='store_true')
 
         ### source
         argument_parser.add_argument(
@@ -109,6 +113,10 @@ class StorageSpaceReconstructorTool():
 
         self.windows_version = getattr(options, 'windows_version', False)
         self.raid_level = getattr(options, 'raid_level', False)
+
+        self.reconstruct_modes["direct_output"] = getattr(options, 'direct_output', False)
+        self.reconstruct_modes["list_only"] = getattr(options, 'list_only', False)
+        
 
     def GetVersionInformation(self):
         return '{0:s} v{1:s}'.format(self.NAME, self.VERSION)
@@ -202,7 +210,7 @@ class StorageSpaceReconstructorTool():
         print("")
         recon.parse_metadata()
 
-        recon.restore_virtual_disk(output_path=self.output)
+        recon.restore_virtual_disk(self.output , self.reconstruct_modes)
 
     def ShowInfo(self):
         print(self.NAME, self.VERSION, self.DESCRIPTION, self.EPILOG)

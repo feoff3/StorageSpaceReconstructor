@@ -122,7 +122,7 @@ class Reconstructor:
                 data_record_len = temp_disk.sdbb_entry_type2[i][temp_offset]
                 physical_disk_usable_size = big_endian_to_int(temp_disk.sdbb_entry_type2[i][temp_offset + 1 : temp_offset + 1 + data_record_len])
                 print("Total: " + str(physical_disk_total_size) + "B , Usable: " + str(physical_disk_usable_size) + "B")
-                physical_disk_block_number = physical_disk_usable_size / 0x10000000 #TODO: check if block number is expected to be this  
+                physical_disk_block_number = int(physical_disk_usable_size / 0x10000000) #TODO: check if block number is expected to be this, maybe we have to reduce the size by two 256MB blocks and 16MB partition offset  
                 #TODO: If possible, check on Win2016 
             else:
                 physical_disk_name_length = struct.unpack('>H', temp_disk.sdbb_entry_type2[i][temp_offset: temp_offset + 0x02])[0]
@@ -150,6 +150,7 @@ class Reconstructor:
         return True
 
     def _parse_entry_type3(self):
+        """type3 contains info about virt disks"""
         temp_disk = None
         for disk in self.disk_list:
             if len(disk.sdbb_entry_type3) == 0:
@@ -159,59 +160,97 @@ class Reconstructor:
         for i in range(0, len(temp_disk.sdbb_entry_type3)):
             disk = Disk()
             temp_offset = 0
+            #print_hex(temp_disk.sdbb_entry_type3[i])
             data_record_len = temp_disk.sdbb_entry_type3[i][temp_offset]
             virtual_disk_id = big_endian_to_int(temp_disk.sdbb_entry_type3[i][temp_offset + 1: temp_offset + 1 + data_record_len])
-            temp_offset += 0x02
+            temp_offset += data_record_len + 1
 
-            #if self.version == Define.WINDOWS_8 or self.version == Define.WINDOWS_SERVER_2019 or self.version == Define.WINDOWS_SERVER_2016 or self.version == Define.WINDOWS_SERVER_2012:
-            if temp_disk.sdbb_entry_type3[i][temp_offset] == 0x01:
+            if self.version == Define.WINDOWS_SERVER_2019:
+                # NOTE: maybe structure changed in Win2019...
                 temp_offset += temp_disk.sdbb_entry_type3[i][temp_offset] + 1
+                virtual_disk_uuid = temp_disk.sdbb_entry_type3[i][temp_offset: temp_offset + 0x10]
+                temp_offset += 0x10
+                #print(str(temp_offset))
+                virtual_disk_name_length = struct.unpack('>H', temp_disk.sdbb_entry_type3[i][temp_offset: temp_offset + 0x02])[0]
+                temp_offset += 0x02
 
-            virtual_disk_uuid = temp_disk.sdbb_entry_type3[i][temp_offset: temp_offset + 0x10]
-            temp_offset += 0x10
+                virtual_disk_name = b''
+                temp_virtual_disk_name = temp_disk.sdbb_entry_type3[i][temp_offset: temp_offset + virtual_disk_name_length * 2]
+                temp_offset += virtual_disk_name_length * 2
+                for j in range(0, virtual_disk_name_length * 2, 2):
+                    virtual_disk_name += temp_virtual_disk_name[j + 1 : j + 2]
+                    virtual_disk_name += temp_virtual_disk_name[j : j + 1]
+                #print(str(temp_offset))
+                #print(virtual_disk_name)
+                disk_description_length = struct.unpack('>H', temp_disk.sdbb_entry_type3[i][temp_offset: temp_offset + 0x02])[0]
+                temp_offset += 0x02
 
-            virtual_disk_name_length = struct.unpack('>H', temp_disk.sdbb_entry_type3[i][temp_offset: temp_offset + 0x02])[0]
-            temp_offset += 0x02
+                disk_description = b''
+                temp_disk_description = temp_disk.sdbb_entry_type3[i][temp_offset: temp_offset + disk_description_length * 2]
+                temp_offset += disk_description_length * 2
+                for j in range(0, disk_description_length * 2, 2):
+                    disk_description += temp_disk_description[j + 1: j + 2]
+                    disk_description += temp_disk_description[j: j + 1]
 
-            virtual_disk_name = b''
-            temp_virtual_disk_name = temp_disk.sdbb_entry_type3[i][temp_offset: temp_offset + virtual_disk_name_length * 2]
-            temp_offset += virtual_disk_name_length * 2
-            for j in range(0, virtual_disk_name_length * 2, 2):
-                virtual_disk_name += temp_virtual_disk_name[j + 1 : j + 2]
-                virtual_disk_name += temp_virtual_disk_name[j : j + 1]
+                temp_offset += 3
+                #print_hex(temp_disk.sdbb_entry_type3[i][temp_offset:])
+                if self.version == Define.WINDOWS_SERVER_2019 or self.version == Define.WINDOWS_10:
+                    data_record_len = temp_disk.sdbb_entry_type3[i][temp_offset]
+                    virtual_disk_bytes = int(big_endian_to_int(
+                        temp_disk.sdbb_entry_type3[i][temp_offset + 1: temp_offset + 1 + data_record_len]))
+                    virtual_disk_block_number = int(virtual_disk_bytes / 0x10000000) # TODO: use allocation unit here (256MB is default but it may be different)
+                if virtual_disk_block_number == 0:
+                    data_record_len = temp_disk.sdbb_entry_type3[i][temp_offset]
+                    virtual_disk_block_number = big_endian_to_int(temp_disk.sdbb_entry_type3[i][temp_offset + 1: temp_offset + 1 + data_record_len])
+            else:
+                if temp_disk.sdbb_entry_type3[i][temp_offset] == 0x01:
+                    temp_offset += temp_disk.sdbb_entry_type3[i][temp_offset] + 1
+                
+                virtual_disk_uuid = temp_disk.sdbb_entry_type3[i][temp_offset: temp_offset + 0x10]
+                temp_offset += 0x10
+                print(str(temp_offset))
+                virtual_disk_name_length = struct.unpack('>H', temp_disk.sdbb_entry_type3[i][temp_offset: temp_offset + 0x02])[0]
+                temp_offset += 0x02
 
-            #if (len(temp_disk.sdbb_entry_type3[i][temp_offset: temp_offset + 0x02]) == 0):
-            #    continue
-            disk_description_length = struct.unpack('>H', temp_disk.sdbb_entry_type3[i][temp_offset: temp_offset + 0x02])[0]
-            temp_offset += 0x02
+                virtual_disk_name = b''
+                temp_virtual_disk_name = temp_disk.sdbb_entry_type3[i][temp_offset: temp_offset + virtual_disk_name_length * 2]
+                temp_offset += virtual_disk_name_length * 2
+                for j in range(0, virtual_disk_name_length * 2, 2):
+                    virtual_disk_name += temp_virtual_disk_name[j + 1 : j + 2]
+                    virtual_disk_name += temp_virtual_disk_name[j : j + 1]
+                print(str(temp_offset))
+                #if (len(temp_disk.sdbb_entry_type3[i][temp_offset: temp_offset + 0x02]) == 0):
+                #    continue
+                disk_description_length = struct.unpack('>H', temp_disk.sdbb_entry_type3[i][temp_offset: temp_offset + 0x02])[0]
+                temp_offset += 0x02
 
-            disk_description = b''
-            temp_disk_description = temp_disk.sdbb_entry_type3[i][temp_offset: temp_offset + disk_description_length * 2]
-            temp_offset += disk_description_length * 2
-            for j in range(0, disk_description_length * 2, 2):
-                disk_description += temp_disk_description[j + 1: j + 2]
-                disk_description += temp_disk_description[j: j + 1]
+                disk_description = b''
+                temp_disk_description = temp_disk.sdbb_entry_type3[i][temp_offset: temp_offset + disk_description_length * 2]
+                temp_offset += disk_description_length * 2
+                for j in range(0, disk_description_length * 2, 2):
+                    disk_description += temp_disk_description[j + 1: j + 2]
+                    disk_description += temp_disk_description[j: j + 1]
 
-            # if self.version == Define.WINDOWS_SERVER_2012:
-            #     temp_offset += temp_disk.sdbb_entry_type3[i][temp_offset] + 1
-            #     temp_offset += temp_disk.sdbb_entry_type3[i][temp_offset] + 1
-            #     temp_offset += temp_disk.sdbb_entry_type3[i][temp_offset] + 1
-            #     temp_offset += temp_disk.sdbb_entry_type3[i][temp_offset] + 1
-            #     temp_offset += temp_disk.sdbb_entry_type3[i][temp_offset] + 1
-            #     temp_offset += temp_disk.sdbb_entry_type3[i][temp_offset] + 1
-            #     temp_offset += 1
-            # else:
-            #    temp_offset += 3
-            temp_offset += 3
+                # if self.version == Define.WINDOWS_SERVER_2012:
+                #     temp_offset += temp_disk.sdbb_entry_type3[i][temp_offset] + 1
+                #     temp_offset += temp_disk.sdbb_entry_type3[i][temp_offset] + 1
+                #     temp_offset += temp_disk.sdbb_entry_type3[i][temp_offset] + 1
+                #     temp_offset += temp_disk.sdbb_entry_type3[i][temp_offset] + 1
+                #     temp_offset += temp_disk.sdbb_entry_type3[i][temp_offset] + 1
+                #     temp_offset += temp_disk.sdbb_entry_type3[i][temp_offset] + 1
+                #     temp_offset += 1
+                # else:
+                #    temp_offset += 3
+                temp_offset += 3
 
-            if self.version == Define.WINDOWS_SERVER_2019 or self.version == Define.WINDOWS_10:
-                data_record_len = temp_disk.sdbb_entry_type3[i][temp_offset]
-                data_record_len -= 3
-                virtual_disk_block_number = int(big_endian_to_int(
-                    temp_disk.sdbb_entry_type3[i][temp_offset + 1: temp_offset + 1 + data_record_len]) / 0x10)
-            if virtual_disk_block_number == 0:
-                data_record_len = temp_disk.sdbb_entry_type3[i][temp_offset]
-                virtual_disk_block_number = big_endian_to_int(temp_disk.sdbb_entry_type3[i][temp_offset + 1: temp_offset + 1 + data_record_len])
+                if self.version == Define.WINDOWS_SERVER_2019 or self.version == Define.WINDOWS_10:
+                    data_record_len = temp_disk.sdbb_entry_type3[i][temp_offset]
+                    data_record_len -= 3
+                    virtual_disk_block_number = int(big_endian_to_int(
+                        temp_disk.sdbb_entry_type3[i][temp_offset + 1: temp_offset + 1 + data_record_len]) / 0x10)
+                if virtual_disk_block_number == 0:
+                    data_record_len = temp_disk.sdbb_entry_type3[i][temp_offset]
+                    virtual_disk_block_number = big_endian_to_int(temp_disk.sdbb_entry_type3[i][temp_offset + 1: temp_offset + 1 + data_record_len])
 
 
             disk.id = virtual_disk_id
@@ -324,13 +363,42 @@ class Reconstructor:
                     self.parsed_disks[sdbb_entry_type4_data['virtual_disk_id']].sdbb_entry_type4.append(
                         sdbb_entry_type4_data)
 
+
+    def _open_output_disk(self, virt_disk_name , output_path , direct_mode = False):
+        """ create a disk based on path """
+        if direct_mode == False:
+            return open(output_path + "\\" + virt_disk_name + ".dd", 'wb')
+        else:
+            """ interprets output_path as a collection of  """
+            virt_phys_map = eval(output_path)
+            if isinstance(virt_phys_map, str):
+                return open(virt_phys_map, 'r+b')
+            if isinstance(virt_phys_map, dict):
+                if not virt_disk_name in virt_phys_map:
+                    print("Failed to find mapping between " + virt_disk_name + " and target disk")
+                    return None
+                mapped_name = virt_phys_map[virt_disk_name]
+                return open(mapped_name, 'r+b')
+            else:
+                print("Failed to read disk map: " + str(output_path))
+                print("it must be string or python dict")
+                return None
+            return open(output_path, 'wb')
+
+
     """ restore disks """
-    def restore_virtual_disk(self, output_path=None):
+    def restore_virtual_disk(self, output_path=None, modes=dict()):
+        direct_mode = False
+        list_only_mode = False
+        if "direct_output" in modes:
+            direct_mode = modes["direct_output"]
+        if "list_only" in modes:
+            list_only_mode = modes["list_only"]
         for disk in self.parsed_disks:
             if disk == None:  # None skip
                 continue
 
-            print(repr(disk.__dict__))
+            #print(repr(disk.__dict__))
 
             if repr(disk.dp) == "Storage Space":  # physical disk skip
                 continue
@@ -340,17 +408,23 @@ class Reconstructor:
                 if disk.name == b'':  # Metadata Area(SPACEDB, SDBC, SDBB) skip
                     continue
 
+                if list_only_mode:
+                    print("Virtual disk found: " + repr(disk.__dict__))
+                    continue
+
                 if output_path == None:# or os.path.exists(output_path) == False:
                     print("[Error] check output_path (" + output_path + ")")
                     return False
-                if os.path.exists(output_path) == False:
+                if direct_mode == False and os.path.exists(output_path) == False:
                     print("[Error] please make the output_path (" + output_path + ")")
                     return False
 
                 print("[*] Start Reconstruction.")
-
-                disk.dp = open(output_path + "\\" + disk.name[:-2].decode('utf-16') + ".dd", 'wb')
-
+                virt_disk_name = disk.name[:-2].decode('utf-16')
+                disk.dp = self._open_output_disk(virt_disk_name , output_path, direct_mode)
+                if disk.dp == None:
+                    print("Failed to open output disk/file for virt disk " + virt_disk_name)
+                    continue 
                 if self.version == Define.WINDOWS_8:
                     """ Simple, Mirror """
                     if self.level == Define.RAID_LEVEL_SIMPLE or self.level == Define.RAID_LEVEL_2MIRROR or \
@@ -367,8 +441,7 @@ class Reconstructor:
                                     break
 
                             if is_exist_disk_block == False:
-                               buf = b'\x00' * 0x10000000
-                               disk.dp.write(buf)
+                               skip_disk_bytes (disk.dp, 0x10000000, direct_mode)
 
                     """ Parity """
                     if self.level == Define.RAID_LEVEL_PARITY :
@@ -393,8 +466,7 @@ class Reconstructor:
                                         is_exist_disk_block = True
 
                             if is_exist_disk_block == False:
-                                buf = b'\x00' * 0x20000000
-                                disk.dp.write(buf)
+                                skip_disk_bytes (disk.dp, 0x20000000, direct_mode)
                                 continue
 
                             partition_start_offset_0 = self.parsed_disks[temp_entry_type4_0['physical_disk_id']].dp.partition_start_offset
@@ -435,8 +507,7 @@ class Reconstructor:
                                     break
 
                             if is_exist_disk_block == False:
-                                buf = b'\x00' * 0x40000000
-                                disk.dp.write(buf)
+                                skip_disk_bytes (disk.dp, 0x40000000, direct_mode)
 
                     elif self.level == Define.RAID_LEVEL_SIMPLE:
                         for i in range(0, disk.block_number, 12):
@@ -460,8 +531,7 @@ class Reconstructor:
                                             is_exist_disk_block = True
 
                                 if is_exist_disk_block == False:
-                                    buf = b'\x00'  * 0xC0000000
-                                    disk.dp.write(buf)
+                                    skip_disk_bytes (disk.dp, 0xC0000000, direct_mode)
                                     continue
 
                                 partition_start_offset_0 = self.parsed_disks[temp_entry_type4_0['physical_disk_id']].dp.partition_start_offset
@@ -501,8 +571,7 @@ class Reconstructor:
                                             is_exist_disk_block = True
 
                                 if is_exist_disk_block == False:
-                                    buf = b'\x00'  * 0xC0000000
-                                    disk.dp.write(buf)
+                                    skip_disk_bytes (disk.dp, 0xC0000000, direct_mode)
                                     continue
 
                                 partition_start_offset_0 = self.parsed_disks[temp_entry_type4_0['physical_disk_id']].dp.partition_start_offset
@@ -551,8 +620,7 @@ class Reconstructor:
                                     break
 
                             if is_exist_disk_block == False:
-                                buf = b'\x00' * 0x10000000
-                                disk.dp.write(buf)
+                                skip_disk_bytes (disk.dp, 0x10000000, direct_mode)
 
                     """ Parity """
                     if self.level == Define.RAID_LEVEL_PARITY:
@@ -577,8 +645,7 @@ class Reconstructor:
                                         is_exist_disk_block = True
 
                             if is_exist_disk_block == False:
-                                buf = b'\x00' * 0x20000000
-                                disk.dp.write(buf)
+                                skip_disk_bytes (disk.dp, 0x20000000, direct_mode)
                                 continue
 
                             partition_start_offset_0 = self.parsed_disks[temp_entry_type4_0['physical_disk_id']].dp.partition_start_offset
@@ -640,8 +707,7 @@ class Reconstructor:
                                         is_exist_disk_block = True
 
                             if is_exist_disk_block == False:
-                                buf = b'\x00' * 0x100000000
-                                disk.dp.write(buf)
+                                skip_disk_bytes (disk.dp, 0x100000000, direct_mode)
                                 continue
 
                             partition_start_offset_0 = self.parsed_disks[temp_entry_type4_0['physical_disk_id']].dp.partition_start_offset
@@ -703,55 +769,22 @@ class Reconstructor:
                                     break
 
                             if is_exist_disk_block == False:
-                                buf = b'\x00' * 0x40000000
-                                disk.dp.write(buf)
+                                skip_disk_bytes (disk.dp, 0x40000000, direct_mode)
+
 
                     elif self.level == Define.RAID_LEVEL_SIMPLE:
-                        """HERE <== """
-                        for i in range(0, disk.block_number, 12):
+                        for i in range(0, disk.block_number):
                             is_exist_disk_block = False
-
-                            temp_entry_type4_0 = None  # Sequence 0
-                            temp_entry_type4_1 = None  # Sequence 1
-                            temp_entry_type4_2 = None  # Sequence 2
-
-                            """ Search Sequence Number """
                             for j in range(0, len(disk.sdbb_entry_type4)):
                                 if disk.sdbb_entry_type4[j]['virtual_disk_block_number'] == i:
-                                    if disk.sdbb_entry_type4[j]['parity_sequence_number'] == 0:
-                                        temp_entry_type4_0 = disk.sdbb_entry_type4[j]
-                                        is_exist_disk_block = True
-                                    elif disk.sdbb_entry_type4[j]['parity_sequence_number'] == 1:
-                                        temp_entry_type4_1 = disk.sdbb_entry_type4[j]
-                                        is_exist_disk_block = True
-                                    elif disk.sdbb_entry_type4[j]['parity_sequence_number'] == 2:
-                                        temp_entry_type4_2 = disk.sdbb_entry_type4[j]
-                                        is_exist_disk_block = True
+                                    partition_start_offset = self.parsed_disks[disk.sdbb_entry_type4[j]['physical_disk_id']].dp.partition_start_offset
+                                    self.parsed_disks[disk.sdbb_entry_type4[j]['physical_disk_id']].dp.dp.seek((disk.sdbb_entry_type4[j]['physical_disk_block_number'] + 2) * 0x10000000 + partition_start_offset)  # SPACEDB 시작 offset을 더해줘야함
+                                    disk.dp.write(self.parsed_disks[disk.sdbb_entry_type4[j]['physical_disk_id']].dp.dp.read(0x10000000))
+                                    is_exist_disk_block = True
+                                    break
 
                             if is_exist_disk_block == False:
-                                buf = b'\x00' * 0xC0000000
-                                disk.dp.write(buf)
-                                continue
-
-                            partition_start_offset_0 = self.parsed_disks[
-                                temp_entry_type4_0['physical_disk_id']].dp.partition_start_offset
-                            partition_start_offset_1 = self.parsed_disks[
-                                temp_entry_type4_1['physical_disk_id']].dp.partition_start_offset
-                            partition_start_offset_2 = self.parsed_disks[
-                                temp_entry_type4_2['physical_disk_id']].dp.partition_start_offset
-                            self.parsed_disks[temp_entry_type4_0['physical_disk_id']].dp.dp.seek((temp_entry_type4_0[
-                                                                                                       'physical_disk_block_number'] + 2) * 0x10000000 + partition_start_offset_0)
-                            self.parsed_disks[temp_entry_type4_1['physical_disk_id']].dp.dp.seek((temp_entry_type4_1[
-                                                                                                      'physical_disk_block_number'] + 2) * 0x10000000 + partition_start_offset_1)  # SPACEDB 시작 offset을 더해줘야함
-                            self.parsed_disks[temp_entry_type4_2['physical_disk_id']].dp.dp.seek((temp_entry_type4_2[
-                                                                                                      'physical_disk_block_number'] + 2) * 0x10000000 + partition_start_offset_2)  # SPACEDB 시작 offset을 더해줘야함
-                            for j in range(0, 0x1000):
-                                disk.dp.write(
-                                    self.parsed_disks[temp_entry_type4_0['physical_disk_id']].dp.dp.read(0x40000))
-                                disk.dp.write(
-                                    self.parsed_disks[temp_entry_type4_1['physical_disk_id']].dp.dp.read(0x40000))
-                                disk.dp.write(
-                                    self.parsed_disks[temp_entry_type4_2['physical_disk_id']].dp.dp.read(0x40000))
+                                skip_disk_bytes (disk.dp, 0x10000000, direct_mode)
 
                     elif self.level == Define.RAID_LEVEL_PARITY:
                         for i in range(0, disk.block_number, 8):
@@ -775,8 +808,7 @@ class Reconstructor:
                                         is_exist_disk_block = True
 
                             if is_exist_disk_block == False:
-                                buf = b'\x00' * 0x80000000
-                                disk.dp.write(buf)
+                                skip_disk_bytes (disk.dp, 0x80000000, direct_mode)
                                 continue
 
                             partition_start_offset_0 = self.parsed_disks[
@@ -839,8 +871,7 @@ class Reconstructor:
                                         is_exist_disk_block = True
 
                             if is_exist_disk_block == False:
-                                buf = b'\x00' * 0x100000000
-                                disk.dp.write(buf)
+                                skip_disk_bytes (disk.dp, 0x100000000, direct_mode)
                                 continue
 
                             partition_start_offset_0 = self.parsed_disks[temp_entry_type4_0['physical_disk_id']].dp.partition_start_offset
