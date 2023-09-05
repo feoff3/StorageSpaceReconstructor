@@ -93,9 +93,10 @@ class Reconstructor:
             if self.version == Define.WINDOWS_SERVER_2019:
                 # NOTE: maybe structure changed in Win2019... 
                 # Some more data (mostly nulls) were added before the disk name, and some added after
-                temp_offset += 0x06
-                temp_offset += temp_disk.sdbb_entry_type2[i][temp_offset] + 1
+                temp_offset += 0x08
+                #temp_offset += temp_disk.sdbb_entry_type2[i][temp_offset] + 1
                 #print(str(temp_offset))
+                #print_hex(temp_disk.sdbb_entry_type2[i][temp_offset:])
                 mfg_name_length = temp_disk.sdbb_entry_type2[i][temp_offset]
                 physical_disk_name = b''
                 temp_mfg_name = temp_disk.sdbb_entry_type2[i][temp_offset: temp_offset + mfg_name_length * 2]
@@ -121,7 +122,7 @@ class Reconstructor:
                 temp_offset += temp_disk.sdbb_entry_type2[i][temp_offset] + 1
                 data_record_len = temp_disk.sdbb_entry_type2[i][temp_offset]
                 physical_disk_usable_size = big_endian_to_int(temp_disk.sdbb_entry_type2[i][temp_offset + 1 : temp_offset + 1 + data_record_len])
-                print("Total: " + str(physical_disk_total_size) + "B , Usable: " + str(physical_disk_usable_size) + "B")
+                print("Total: " + str(physical_disk_total_size) + " B , Usable: " + str(physical_disk_usable_size) + " B")
                 physical_disk_block_number = int(physical_disk_usable_size / 0x10000000) #TODO: check if block number is expected to be this, maybe we have to reduce the size by two 256MB blocks and 16MB partition offset  
                 #TODO: If possible, check on Win2016 
             else:
@@ -320,18 +321,23 @@ class Reconstructor:
                 sdbb_entry_type4_data['physical_disk_id'] = None
                 sdbb_entry_type4_data['physical_disk_block_number'] = None
                 temp_offset = 0
+                #print_hex(temp_disk.sdbb_entry_type4[i])
+                if self.version == Define.WINDOWS_SERVER_2019:
+                    temp_offset += 8 
+                else:
+                    temp_offset += temp_disk.sdbb_entry_type4[i][temp_offset] + 1
+                    temp_offset += temp_disk.sdbb_entry_type4[i][temp_offset] + 1
+                    temp_offset += temp_disk.sdbb_entry_type4[i][temp_offset] + 1
+                    temp_offset += temp_disk.sdbb_entry_type4[i][temp_offset] + 1
+                    temp_offset += temp_disk.sdbb_entry_type4[i][temp_offset] + 1
 
-                temp_offset += temp_disk.sdbb_entry_type4[i][temp_offset] + 1
-                temp_offset += temp_disk.sdbb_entry_type4[i][temp_offset] + 1
-                temp_offset += temp_disk.sdbb_entry_type4[i][temp_offset] + 1
-                temp_offset += temp_disk.sdbb_entry_type4[i][temp_offset] + 1
-                temp_offset += temp_disk.sdbb_entry_type4[i][temp_offset] + 1
-
+                #print_hex(temp_disk.sdbb_entry_type4[i][temp_offset:])
                 data_record_len = temp_disk.sdbb_entry_type4[i][temp_offset]
                 sdbb_entry_type4_data['virtual_disk_id'] = big_endian_to_int(
                     temp_disk.sdbb_entry_type4[i][temp_offset + 1: temp_offset + 1 + data_record_len])
                 temp_offset += temp_disk.sdbb_entry_type4[i][temp_offset] + 1
 
+                #print_hex(temp_disk.sdbb_entry_type4[i][temp_offset:])
                 data_record_len = temp_disk.sdbb_entry_type4[i][temp_offset]
                 sdbb_entry_type4_data['virtual_disk_block_number'] = big_endian_to_int(
                     temp_disk.sdbb_entry_type4[i][temp_offset + 1: temp_offset + 1 + data_record_len])
@@ -364,10 +370,13 @@ class Reconstructor:
                         sdbb_entry_type4_data)
 
 
-    def _open_output_disk(self, virt_disk_name , output_path , direct_mode = False):
+    def _open_output_disk(self, virt_disk_name , output_path , direct_mode = False , dump_only_mode = False):
         """ create a disk based on path """
         if direct_mode == False:
-            return open(output_path + "\\" + virt_disk_name + ".dd", 'wb')
+            postfix = ".dd"
+            if dump_only_mode:
+                postfix=".txt"
+            return open(output_path + "\\" + virt_disk_name + postfix, 'wb')
         else:
             """ interprets output_path as a collection of  """
             virt_phys_map = eval(output_path)
@@ -390,15 +399,16 @@ class Reconstructor:
     def restore_virtual_disk(self, output_path=None, modes=dict()):
         direct_mode = False
         list_only_mode = False
+        dump_only_mode = False
         if "direct_output" in modes:
             direct_mode = modes["direct_output"]
         if "list_only" in modes:
             list_only_mode = modes["list_only"]
+        if "dump_only" in modes:
+            dump_only_mode = modes["dump_only"]
         for disk in self.parsed_disks:
             if disk == None:  # None skip
                 continue
-
-            #print(repr(disk.__dict__))
 
             if repr(disk.dp) == "Storage Space":  # physical disk skip
                 continue
@@ -421,10 +431,13 @@ class Reconstructor:
 
                 print("[*] Start Reconstruction.")
                 virt_disk_name = disk.name[:-2].decode('utf-16')
-                disk.dp = self._open_output_disk(virt_disk_name , output_path, direct_mode)
+                disk.dp = self._open_output_disk(virt_disk_name , output_path, direct_mode, dump_only_mode)
                 if disk.dp == None:
                     print("Failed to open output disk/file for virt disk " + virt_disk_name)
-                    continue 
+                    continue
+                if dump_only_mode:
+                    disk.dp.write(repr(disk.__dict__).replace('{','\n{').encode())
+                    continue
                 if self.version == Define.WINDOWS_8:
                     """ Simple, Mirror """
                     if self.level == Define.RAID_LEVEL_SIMPLE or self.level == Define.RAID_LEVEL_2MIRROR or \

@@ -73,6 +73,8 @@ class StorageSpaceReconstructorTool():
 
         argument_parser.add_argument('-l', '--list_only', action='store_true')
 
+        argument_parser.add_argument('-U', '--dump_only', action='store_true')
+
         ### source
         argument_parser.add_argument(
             '-inputs', action='store', dest='inputs', nargs='+', type=str, help='Enter sources for RAID reconstruction.')
@@ -116,7 +118,7 @@ class StorageSpaceReconstructorTool():
 
         self.reconstruct_modes["direct_output"] = getattr(options, 'direct_output', False)
         self.reconstruct_modes["list_only"] = getattr(options, 'list_only', False)
-        
+        self.reconstruct_modes["dump_only"] = getattr(options, 'dump_only', False)
 
     def GetVersionInformation(self):
         return '{0:s} v{1:s}'.format(self.NAME, self.VERSION)
