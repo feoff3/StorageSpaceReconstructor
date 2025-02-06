@@ -118,7 +118,7 @@ class StorageSpace:
         else:
             print("[*] SDBB Parsing Fail.")
             return False
-
+        print("SDBB Size: " + str(sddb_size))
         print("[*] Disk Parsing Success.")
         return True
 

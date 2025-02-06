@@ -193,7 +193,7 @@ class StorageSpaceReconstructorTool():
 
             if disk.open_disk(input):
                 if disk.parse_disk():
-                    pass
+                    print("Succesfully parsed disk " + str(input));
                 else:
                     print("[Error] parse_disk (" + input + ")")
                     return False
